@@ -150,8 +150,7 @@ func TestAssignEmployeeSameEmployeeTwiceIsAllowed(t *testing.T) {
 }
 
 func TestAssignEmployeeErrors(t *testing.T) {
-	svc := newTestService()
-	shift := mustCreate(t, svc, at(9), at(17))
+	const existingShift = "<existing>" // replaced by the ID of a freshly created shift
 
 	tests := []struct {
 		name       string
@@ -160,17 +159,57 @@ func TestAssignEmployeeErrors(t *testing.T) {
 		wantErr    error
 	}{
 		{"empty shift id", "", "emp-1", ErrInvalidArgument},
-		{"empty employee id", shift.ID, "", ErrInvalidArgument},
-		{"blank employee id", shift.ID, "  ", ErrInvalidArgument},
+		{"empty employee id", existingShift, "", ErrInvalidArgument},
+		{"blank employee id", existingShift, "  ", ErrInvalidArgument},
 		{"unknown shift", "does-not-exist", "emp-1", ErrNotFound},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := svc.AssignEmployee(tt.shiftID, tt.employeeID)
+			// Each case gets its own service so cases cannot affect each other.
+			svc := newTestService()
+			shiftID := tt.shiftID
+			if shiftID == existingShift {
+				shiftID = mustCreate(t, svc, at(9), at(17)).ID
+			}
+
+			_, err := svc.AssignEmployee(shiftID, tt.employeeID)
 			if !errors.Is(err, tt.wantErr) {
 				t.Errorf("got error %v, want %v", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+// A rejected assignment must leave the shift unchanged.
+func TestAssignEmployeeConflictLeavesShiftUnassigned(t *testing.T) {
+	svc := newTestService()
+	first := mustCreate(t, svc, at(9), at(17))
+	overlapping := mustCreate(t, svc, at(12), at(20))
+	if _, err := svc.AssignEmployee(first.ID, "emp-1"); err != nil {
+		t.Fatalf("assign first: %v", err)
+	}
+
+	if _, err := svc.AssignEmployee(overlapping.ID, "emp-1"); !errors.Is(err, ErrConflict) {
+		t.Fatalf("got error %v, want ErrConflict", err)
+	}
+
+	stored, err := svc.GetShift(overlapping.ID)
+	if err != nil {
+		t.Fatalf("GetShift: %v", err)
+	}
+	if stored.IsAssigned() {
+		t.Errorf("rejected shift should stay unassigned, got employee %q", stored.EmployeeID)
+	}
+}
+
+// An employee can work several back-to-back shifts in a row.
+func TestAssignEmployeeAdjacentShiftsChain(t *testing.T) {
+	svc := newTestService()
+	for _, hours := range [][2]int{{9, 12}, {12, 15}, {15, 18}} {
+		s := mustCreate(t, svc, at(hours[0]), at(hours[1]))
+		if _, err := svc.AssignEmployee(s.ID, "emp-1"); err != nil {
+			t.Errorf("assign %02d:00-%02d:00: got %v, want nil", hours[0], hours[1], err)
+		}
 	}
 }
 
