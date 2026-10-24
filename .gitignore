@@ -28,6 +28,15 @@ go.work.sum
 # env file
 .env
 
+/bin/
+
 # Editor/IDE
-# .idea/
-# .vscode/
+.idea/
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Note: gen/ is intentionally NOT ignored. Generated protobuf code is
+# committed so the project builds without protoc installed.
