@@ -5,7 +5,8 @@
 //	go run ./cmd/server            # listens on localhost:50051
 //	go run ./cmd/server -port 6000 # listens on localhost:6000
 //
-// Press Ctrl+C to stop the server gracefully.
+// Press Ctrl+C to stop the server gracefully. Press it again to force an
+// immediate exit if in-flight requests do not finish.
 package main
 
 import (
@@ -17,6 +18,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"syscall"
 
 	shiftv1 "github.com/dishamistry/go-shift-scheduling-grpc/gen/shift/v1"
 	"github.com/dishamistry/go-shift-scheduling-grpc/internal/grpcserver"
@@ -32,6 +34,7 @@ func main() {
 	if err := run(*port); err != nil {
 		log.Fatal(err)
 	}
+	log.Println("server stopped")
 }
 
 func run(port int) error {
@@ -50,11 +53,16 @@ func run(port int) error {
 	// Reflection lets tools such as grpcurl discover the API without the .proto file.
 	reflection.Register(srv)
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	// Ctrl+C sends os.Interrupt; SIGTERM is the usual stop signal on Linux/macOS.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	go func() {
 		<-ctx.Done()
-		log.Println("shutting down")
+		// Restore default signal handling so a second Ctrl+C exits immediately.
+		stop()
+		log.Println("shutting down: waiting for in-flight requests to finish")
+		// GracefulStop stops accepting new connections and RPCs, waits for
+		// running RPCs to complete, and then makes Serve return nil.
 		srv.GracefulStop()
 	}()
 

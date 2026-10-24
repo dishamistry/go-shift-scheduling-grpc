@@ -202,6 +202,26 @@ func TestAssignEmployeeConflictLeavesShiftUnassigned(t *testing.T) {
 	}
 }
 
+// Surrounding whitespace must not turn the same employee into a "different" one
+// and bypass the overlap rule.
+func TestAssignEmployeeTrimsWhitespace(t *testing.T) {
+	svc := newTestService()
+	first := mustCreate(t, svc, at(9), at(17))
+	overlapping := mustCreate(t, svc, at(12), at(20))
+
+	got, err := svc.AssignEmployee(" "+first.ID+" ", " emp-1 ")
+	if err != nil {
+		t.Fatalf("assign with padded IDs: %v", err)
+	}
+	if got.EmployeeID != "emp-1" {
+		t.Errorf("stored employee = %q, want %q", got.EmployeeID, "emp-1")
+	}
+
+	if _, err := svc.AssignEmployee(overlapping.ID, "emp-1"); !errors.Is(err, ErrConflict) {
+		t.Errorf("got error %v, want ErrConflict", err)
+	}
+}
+
 // An employee can work several back-to-back shifts in a row.
 func TestAssignEmployeeAdjacentShiftsChain(t *testing.T) {
 	svc := newTestService()

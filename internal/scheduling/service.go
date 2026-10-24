@@ -43,7 +43,8 @@ func (s *Service) CreateShift(start, end time.Time) (Shift, error) {
 
 // GetShift returns the shift with the given ID.
 func (s *Service) GetShift(id string) (Shift, error) {
-	if err := requireID("shift id", id); err != nil {
+	id, err := normalizeID("shift id", id)
+	if err != nil {
 		return Shift{}, err
 	}
 	return s.repo.Get(id)
@@ -55,10 +56,12 @@ func (s *Service) GetShift(id string) (Shift, error) {
 // or if the employee already has a shift that overlaps this one. Assigning
 // the same employee again is allowed and returns the shift unchanged.
 func (s *Service) AssignEmployee(shiftID, employeeID string) (Shift, error) {
-	if err := requireID("shift id", shiftID); err != nil {
+	shiftID, err := normalizeID("shift id", shiftID)
+	if err != nil {
 		return Shift{}, err
 	}
-	if err := requireID("employee id", employeeID); err != nil {
+	employeeID, err = normalizeID("employee id", employeeID)
+	if err != nil {
 		return Shift{}, err
 	}
 
@@ -107,9 +110,13 @@ func validateTimeRange(start, end time.Time) error {
 	return nil
 }
 
-func requireID(name, value string) error {
-	if strings.TrimSpace(value) == "" {
-		return fmt.Errorf("%w: %s is required", ErrInvalidArgument, name)
+// normalizeID trims surrounding whitespace so that "emp-1" and " emp-1 " refer
+// to the same employee (otherwise padding could bypass the overlap rule).
+// It returns ErrInvalidArgument if nothing is left.
+func normalizeID(name, value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", fmt.Errorf("%w: %s is required", ErrInvalidArgument, name)
 	}
-	return nil
+	return value, nil
 }
